@@ -1,4 +1,8 @@
-github.com/projecthunt/reuseable v0.0.7 h1:UgHL8M8+sbk7AEFbXSoaNvCiwXXrA99QuE+vU/Qd54g=
-github.com/projecthunt/reuseable v0.0.7/go.mod h1:IOAXT1IqCR4bEBRKUk4+Gh9C2yKw0r4QxAoMWC/9jUU=
+github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
+github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
+github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
+github.com/xmapst/reuseable v0.0.0-20220729041713-16fb23d1c9ef h1:w7HRht6hXLW2SlRvilZeMFoDvw4IFrxkHHdMIaC6Tvk=
+github.com/xmapst/reuseable v0.0.0-20220729041713-16fb23d1c9ef/go.mod h1:IOAXT1IqCR4bEBRKUk4+Gh9C2yKw0r4QxAoMWC/9jUU=
 golang.org/x/sys v0.0.0-20211103235746-7861aae1554b h1:1VkfZQv42XQlA/jchYumAnv1UPo6RgF9rJFkTgZIxO4=
 golang.org/x/sys v0.0.0-20211103235746-7861aae1554b/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b h1:h8qDotaEPuJATrMmW04NCwg7v22aHH28wwpauUhK9Oo=
