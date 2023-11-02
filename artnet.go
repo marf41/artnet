@@ -15,13 +15,21 @@ var lastseq uint8
 
 const notan string = "Not an Art-Net packet"
 
+type OpCode uint16
+
+const (
+	OPCODEPOOL      OpCode = 0x20
+	OPCODEPOOLREPLY OpCode = 0x21
+	OPCODECHANNELS  OpCode = 0x50
+)
+
 func notanerr(s string) error {
 	return errors.New(fmt.Sprintf("%s (%s).\n", notan, s))
 }
 
 type ArtNet struct {
 	Type        string
-	OpCode      uint16
+	OpCode      OpCode
 	ProtocolVer uint16
 	Sequence    uint8
 	Physical    uint8
@@ -31,15 +39,50 @@ type ArtNet struct {
 	Pool        ArtNetPoll
 	PoolReply   ArtNetPollReply
 	Source      net.Addr
+	HasChannels bool
 }
 
-func (an ArtNet) Channels(from, to int, delim string) string {
+func (an ArtNet) ChannelsAsString(from, to int, delim string) string {
+	if !an.HasChannels {
+		return ""
+	}
 	n := to - from
 	ch := make([]string, n)
 	for i, v := range an.Data[from:to] {
 		ch[i] = strconv.Itoa(int(v))
 	}
 	return strings.Join(ch, delim)
+}
+
+func (an ArtNet) ChannelsAsSliceOfStrings(from, to int) []string {
+	if !an.HasChannels {
+		return nil
+	}
+	n := to - from
+	ch := make([]string, n)
+	for i, v := range an.Data[from:to] {
+		ch[i] = strconv.Itoa(int(v))
+	}
+	return ch
+}
+
+func (an ArtNet) ChannelsAsSlice(from, to int) []uint8 {
+	if !an.HasChannels {
+		return nil
+	}
+	n := to - from
+	ch := make([]uint8, n)
+	for i, v := range an.Data[from:to] {
+		ch[i] = v
+	}
+	return ch
+}
+
+func (an ArtNet) Channel(n uint) (uint8, bool) {
+	if !an.HasChannels {
+		return 0, false
+	}
+	return an.Data[n-1], true
 }
 
 type ArtNetPoll struct {
@@ -89,7 +132,7 @@ func (apr ArtNetPollReply) IP() string {
 	return fmt.Sprintf("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
 }
 
-func GetAndParse(plog bool) (ArtNet, error) {
+func GetAndParse(debug bool) (ArtNet, error) {
 	pc, err := reuseable.ListenPacket("udp", ":6454")
 	if err != nil {
 		return ArtNet{}, err
@@ -97,7 +140,66 @@ func GetAndParse(plog bool) (ArtNet, error) {
 	defer pc.Close()
 	buf := make([]byte, 1024)
 	n, addr, err := pc.ReadFrom(buf)
-	return Parse(buf, n, addr, plog)
+	return Parse(buf, n, addr, debug)
+}
+
+func parsePool(s ArtNet, an []uint8, plog bool) (ArtNet, error) {
+	flags := an[4]
+	pr := an[5]
+	s.Pool = ArtNetPoll{}
+	s.Pool.Priority = pr
+	if plog {
+		log.Println("ArtPoll packet.")
+	}
+	if flags > 0 {
+		txstatchange := flags&(1<<1) > 0
+		txdiag := flags&(1<<2) > 0
+		diaguni := flags&(1<<3) > 0
+		txvlc := flags&(1<<4) > 0
+		s.Pool.TxDiagOnChange = txstatchange
+		s.Pool.TxDiag = txdiag
+		s.Pool.TxDiagUnicast = diaguni
+		s.Pool.TxVLC = txvlc
+	}
+	return s, nil
+}
+
+func parseReply(s ArtNet, an, buf []uint8, plog bool) (ArtNet, error) {
+	s.PoolReply = ArtNetPollReply{}
+	ip := make([]uint8, 4)
+	ip[0] = an[2]
+	ip[1] = an[3]
+	ip[2] = an[4]
+	ip[3] = an[5]
+	s.PoolReply.IPAddress = ip
+	s.PoolReply.Name = strings.Trim(string(buf[26:44]), "\x00")
+	s.PoolReply.LongName = strings.Trim(string(buf[44:108]), "\x00")
+	s.PoolReply.Status = strings.Trim(string(buf[108:172]), "\x00")
+	if plog {
+		log.Printf("ArtPollReply: %q @ %s (%q).\n", s.PoolReply.Name, s.PoolReply.IP(), s.PoolReply.Status)
+	}
+	return s, nil
+}
+
+func parseChannels(s ArtNet, an []uint8, plog bool) (ArtNet, error) {
+	s.Sequence = an[4]
+	lastseq = s.Sequence
+	s.Physical = an[5]
+	subuni := an[6]
+	net := an[7]
+	s.Port = uint16(net)*256 + uint16(subuni)
+	s.Length = uint16(an[8])*256 + uint16(an[9])
+	if s.Length > 512 {
+		return s, errors.New(fmt.Sprintf("Invalid packet (data length is %d).\n", s.Length))
+	}
+	for i, v := range an[10 : 10+s.Length] {
+		s.Data[i] = v
+	}
+	if plog {
+		log.Printf("#%3d PHY%d P%d. 1-16/%d: %s\n", s.Sequence, s.Physical, s.Port, s.Length, s.ChannelsAsString(0, 16, " "))
+	}
+	s.HasChannels = true
+	return s, nil
 }
 
 func Parse(buf []byte, n int, addr net.Addr, plog bool) (ArtNet, error) {
@@ -114,71 +216,20 @@ func Parse(buf []byte, n int, addr net.Addr, plog bool) (ArtNet, error) {
 	for i, b := range buf[8:n] {
 		an[i] = uint8(b)
 	}
-	op := uint16(an[0])*256 + uint16(an[1])
+	op := OpCode(uint16(an[0])*256 + uint16(an[1]))
 	ver := uint16(an[2])*256 + uint16(an[3])
-	s.OpCode = op
+	s.OpCode = OpCode(op)
 	s.ProtocolVer = ver
 	if ver < 14 {
 		return s, notanerr(fmt.Sprintf("version is %d", ver))
 	}
-	if op == 0x20 {
-		flags := an[4]
-		pr := an[5]
-		s.Pool = ArtNetPoll{}
-		s.Pool.Priority = pr
-		if plog {
-			log.Println("ArtPoll packet.")
-		}
-		if flags > 0 {
-			txstatchange := flags&(1<<1) > 0
-			txdiag := flags&(1<<2) > 0
-			diaguni := flags&(1<<3) > 0
-			txvlc := flags&(1<<4) > 0
-			s.Pool.TxDiagOnChange = txstatchange
-			s.Pool.TxDiag = txdiag
-			s.Pool.TxDiagUnicast = diaguni
-			s.Pool.TxVLC = txvlc
-		}
-		return s, nil
-	}
-	if op == 0x21 {
-		s.PoolReply = ArtNetPollReply{}
-		ip := make([]uint8, 4)
-		ip[0] = an[2]
-		ip[1] = an[3]
-		ip[2] = an[4]
-		ip[3] = an[5]
-		s.PoolReply.IPAddress = ip
-		s.PoolReply.Name = strings.Trim(string(buf[26:44]), "\x00")
-		s.PoolReply.LongName = strings.Trim(string(buf[44:108]), "\x00")
-		s.PoolReply.Status = strings.Trim(string(buf[108:172]), "\x00")
-		if plog {
-			log.Printf("ArtPollReply: %q @ %s (%q).\n", s.PoolReply.Name, s.PoolReply.IP(), s.PoolReply.Status)
-		}
-		return s, nil
-	}
-	if op == 0x50 {
-		s.Sequence = an[4]
-		lastseq = s.Sequence
-		s.Physical = an[5]
-		subuni := an[6]
-		net := an[7]
-		s.Port = uint16(net)*256 + uint16(subuni)
-		s.Length = uint16(an[8])*256 + uint16(an[9])
-		if s.Length > 512 {
-			return s, errors.New(fmt.Sprintf("Invalid packet (data length is %d).\n", s.Length))
-		}
-		for i, v := range an[10 : 10+s.Length] {
-			s.Data[i] = v
-		}
-		if plog {
-			// ch := make([]string, 16)
-			// for i, v := range(an[10:26]) { ch[i] = strconv.Itoa(int(v)) }
-			// chn := strings.Join(ch, " ")
-			// log.Printf("#%3d PHY%d P%d. 1-16/%d: %s\n", s.Sequence, s.Physical, s.Port, s.Length, chn)
-			log.Printf("#%3d PHY%d P%d. 1-16/%d: %s\n", s.Sequence, s.Physical, s.Port, s.Length, s.Channels(0, 16, " "))
-		}
-		return s, nil
+	switch op {
+	case OPCODEPOOL:
+		return parsePool(s, an, plog)
+	case OPCODEPOOLREPLY:
+		return parseReply(s, an, buf, plog)
+	case OPCODECHANNELS:
+		return parseChannels(s, an, plog)
 	}
 	return s, errors.New(fmt.Sprintf("Unsupported opcode %d.", op))
 }

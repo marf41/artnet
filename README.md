@@ -8,7 +8,8 @@ Tested using Chamsys MagicQ for PC.
 
 ## Windows fix
 
-Add following line to `go.mod`:
+Add following line to `go.mod`, in package using this:
+
 ```
 replace github.com/projecthunt/reuseable => github.com/xmapst/reuseable v0.0.0-20220729041713-16fb23d1c9ef
 ```
