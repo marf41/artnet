@@ -42,37 +42,34 @@ type ArtNet struct {
 	HasChannels bool
 }
 
-func (an ArtNet) ChannelsAsString(from, to int, delim string) string {
+func (an ArtNet) ChannelsAsString(from, amount int, delim string) string {
 	if !an.HasChannels {
 		return ""
 	}
-	n := to - from
-	ch := make([]string, n)
-	for i, v := range an.Data[from:to] {
+	ch := make([]string, amount)
+	for i, v := range an.Data[from-1 : from-1+amount] {
 		ch[i] = strconv.Itoa(int(v))
 	}
 	return strings.Join(ch, delim)
 }
 
-func (an ArtNet) ChannelsAsSliceOfStrings(from, to int) []string {
+func (an ArtNet) ChannelsAsSliceOfStrings(from, amount int) []string {
 	if !an.HasChannels {
 		return nil
 	}
-	n := to - from
-	ch := make([]string, n)
-	for i, v := range an.Data[from:to] {
+	ch := make([]string, amount)
+	for i, v := range an.Data[from-1 : from-1+amount] {
 		ch[i] = strconv.Itoa(int(v))
 	}
 	return ch
 }
 
-func (an ArtNet) ChannelsAsSlice(from, to int) []uint8 {
+func (an ArtNet) ChannelsAsSlice(from, amount int) []uint8 {
 	if !an.HasChannels {
 		return nil
 	}
-	n := to - from
-	ch := make([]uint8, n)
-	for i, v := range an.Data[from:to] {
+	ch := make([]uint8, amount)
+	for i, v := range an.Data[from-1 : from-1+amount] {
 		ch[i] = v
 	}
 	return ch
